@@ -1,0 +1,198 @@
+name: Deployment Pipeline
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Build & Package
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install wheel setuptools
+
+    - name: Create distribution package
+      run: |
+        mkdir -p dist/
+        echo "Creating package..."
+        tar -czf dist/gamezone-analytics-$(date +%Y%m%d).tar.gz \
+          --exclude='.git' \
+          --exclude='.venv' \
+          --exclude='venv' \
+          --exclude='__pycache__' \
+          --exclude='.env' \
+          .
+
+    - name: Generate artifact checksums
+      run: |
+        cd dist/
+        sha256sum * > checksums.txt
+        cat checksums.txt
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts
+        path: dist/
+        retention-days: 30
+
+  validate:
+    runs-on: ubuntu-latest
+    name: Pre-deployment Validation
+    needs: build
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Validate project structure
+      run: |
+        echo "Validating project structure..."
+        
+        required_files=(
+          "README.md"
+          ".env.example"
+          ".gitignore"
+          "queries_foundational_analytics.sql"
+          "queries_strategic_analytics.sql"
+          "01_load_data_to_database.py"
+          "02_build_analytical_tables.py"
+          "03_verify_dimension_tables.py"
+          "04_inspect_fact_table_schema.py"
+        )
+        
+        missing_files=()
+        for file in "${required_files[@]}"; do
+          if [ ! -f "$file" ]; then
+            missing_files+=("$file")
+            echo "❌ Missing: $file"
+          else
+            echo "✅ Found: $file"
+          fi
+        done
+        
+        if [ ${#missing_files[@]} -gt 0 ]; then
+          echo "ERROR: Missing required files"
+          exit 1
+        fi
+
+    - name: Validate Python syntax
+      run: |
+        python -m py_compile 01_load_data_to_database.py
+        python -m py_compile 02_build_analytical_tables.py
+        python -m py_compile 03_verify_dimension_tables.py
+        python -m py_compile 04_inspect_fact_table_schema.py
+        echo "✅ All Python files compile successfully"
+
+    - name: Verify no hardcoded secrets
+      run: |
+        echo "Scanning for hardcoded secrets..."
+        if grep -r "PASSWORD\|SECRET\|TOKEN\|API_KEY" . \
+          --include="*.py" \
+          --exclude-dir=.git \
+          --exclude-dir=venv \
+          --exclude-dir=.venv \
+          --exclude="*.md" \
+          | grep -v "os.getenv\|\.env"; then
+          echo "⚠️ WARNING: Potential hardcoded secrets found"
+        else
+          echo "✅ No obvious hardcoded secrets"
+        fi
+
+  release:
+    runs-on: ubuntu-latest
+    name: Create Release
+    needs: validate
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: build-artifacts
+        path: dist/
+
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: GameZone BI ${{ github.ref }}
+        body: |
+          # GameZone Business Intelligence Platform Release
+          
+          ## Release Information
+          - **Tag:** ${{ github.ref }}
+          - **Build Date:** $(date)
+          - **Commit:** ${{ github.sha }}
+          
+          ## What's Included
+          - Complete analytics platform
+          - 56+ pre-built SQL queries
+          - ETL Python scripts
+          - Professional documentation
+          
+          ## Installation
+          1. Extract the archive
+          2. Copy .env.example to .env
+          3. Update database credentials
+          4. Run setup scripts
+          
+          ## Documentation
+          - See README.md for getting started
+          - See 00_PROJECT_OVERVIEW.md for complete reference
+          - See EXECUTIVE_PROJECT_REVIEW.md for executive summary
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Assets
+      uses: softprops/action-gh-release@v1
+      with:
+        files: dist/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify:
+    runs-on: ubuntu-latest
+    name: Deployment Notification
+    needs: release
+    if: always()
+
+    steps:
+    - name: Deployment Status
+      run: |
+        echo "Deployment Status Report"
+        echo "========================"
+        echo "Build Status: ${{ needs.build.result }}"
+        echo "Validation Status: ${{ needs.validate.result }}"
+        echo "Release Status: ${{ needs.release.result }}"
+        
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "✅ Deployment completed successfully"
+        else
+          echo "⚠️ Deployment completed with status: ${{ job.status }}"
+        fi
+

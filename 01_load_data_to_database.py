@@ -8,15 +8,26 @@ import psycopg2
 from psycopg2 import sql
 import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 print("[INFO] === GameZone Data Mart → PostgreSQL ===\n")
 
-# Configuration
-HOST = "127.0.0.1"
-PORT = 5432
-DATABASE = "gamezone_analytics"
-USERNAME = "postgres"
-PASSWORD = "Litureddy098@"
+# Configuration - Load from environment variables
+HOST = os.getenv('DB_HOST', '127.0.0.1')
+PORT = int(os.getenv('DB_PORT', 5432))
+DATABASE = os.getenv('DB_NAME', 'gamezone_analytics')
+USERNAME = os.getenv('DB_USER', 'postgres')
+PASSWORD = os.getenv('DB_PASSWORD', '')
+
+# Validate that password is provided
+if not PASSWORD:
+    print("❌ Error: Database password not found in environment variables!")
+    print("📋 Please create a .env file with DB_PASSWORD or set environment variable")
+    print("📝 Template: Copy .env.example to .env and update with your credentials")
+    exit(1)
 
 # ===================================================================
 # 1. CONNECT AND CREATE DATABASE

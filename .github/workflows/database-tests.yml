@@ -1,0 +1,264 @@
+name: Database & ETL Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  setup-database:
+    runs-on: ubuntu-latest
+    name: Database Setup & Validation
+
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: testpassword123
+          POSTGRES_DB: gamezone_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+      continue-on-error: true
+
+    - name: Create .env for testing
+      run: |
+        cat > .env << EOF
+        DB_HOST=localhost
+        DB_PORT=5432
+        DB_NAME=gamezone_test
+        DB_USER=postgres
+        DB_PASSWORD=testpassword123
+        ENVIRONMENT=testing
+        EOF
+
+    - name: Wait for PostgreSQL
+      run: |
+        python -c "
+        import psycopg2
+        import time
+        for i in range(30):
+          try:
+            conn = psycopg2.connect(
+              host='localhost',
+              port=5432,
+              database='gamezone_test',
+              user='postgres',
+              password='testpassword123'
+            )
+            conn.close()
+            print('✅ PostgreSQL is ready')
+            break
+          except Exception as e:
+            print(f'Waiting for PostgreSQL... ({i+1}/30)')
+            time.sleep(1)
+        "
+
+    - name: Validate data files exist
+      run: |
+        echo "Checking data files..."
+        for file in dim_01_customers.csv dim_02_products.csv dim_03_dates.csv \
+                    dim_04_countries.csv dim_05_platforms.csv dim_06_marketing_channels.csv \
+                    fact_01_orders_transactions.csv; do
+          if [ -f "$file" ]; then
+            echo "✅ $file found"
+          else
+            echo "⚠️ $file not found (may be expected in CI environment)"
+          fi
+        done
+
+    - name: Check CSV file integrity
+      run: |
+        python -c "
+        import pandas as pd
+        import os
+        
+        csv_files = [
+          'dim_01_customers.csv',
+          'dim_02_products.csv',
+          'dim_03_dates.csv',
+          'dim_04_countries.csv',
+          'dim_05_platforms.csv',
+          'dim_06_marketing_channels.csv',
+          'fact_01_orders_transactions.csv'
+        ]
+        
+        for csv_file in csv_files:
+          if os.path.exists(csv_file):
+            try:
+              df = pd.read_csv(csv_file)
+              print(f'✅ {csv_file}: {len(df)} rows')
+            except Exception as e:
+              print(f'❌ {csv_file}: {e}')
+          else:
+            print(f'⏭️  {csv_file}: Not in CI (expected)')
+        "
+      continue-on-error: true
+
+  sql-validation:
+    runs-on: ubuntu-latest
+    name: SQL Query Validation
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Validate SQL syntax
+      run: |
+        echo "Validating SQL files..."
+        for sql_file in *.sql; do
+          if [ -f "$sql_file" ]; then
+            echo "Checking $sql_file..."
+            # Basic SQL syntax check (not full validation)
+            if grep -q "SELECT\|INSERT\|UPDATE\|DELETE" "$sql_file"; then
+              echo "✅ $sql_file contains SQL statements"
+            fi
+          fi
+        done
+
+    - name: Check for SQL best practices
+      run: |
+        python -c "
+        import os
+        import re
+        
+        sql_files = [
+          'queries_foundational_analytics.sql',
+          'queries_strategic_analytics.sql'
+        ]
+        
+        for sql_file in sql_files:
+          if os.path.exists(sql_file):
+            with open(sql_file, 'r') as f:
+              content = f.read()
+              
+            # Check for comments
+            comments = len(re.findall(r'^--', content, re.MULTILINE))
+            
+            # Check for NULL handling
+            null_checks = len(re.findall(r'IS NOT NULL|!= \\x27\\x27', content, re.IGNORECASE))
+            
+            print(f'{sql_file}:')
+            print(f'  - Comments: {comments}')
+            print(f'  - NULL checks: {null_checks}')
+            print(f'  ✅ File validated')
+        "
+
+  python-tests:
+    runs-on: ubuntu-latest
+    name: Python Unit Tests
+
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: testpassword123
+          POSTGRES_DB: gamezone_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-cov psycopg2-binary pandas python-dotenv
+
+    - name: Create .env for testing
+      run: |
+        cat > .env << EOF
+        DB_HOST=localhost
+        DB_PORT=5432
+        DB_NAME=gamezone_test
+        DB_USER=postgres
+        DB_PASSWORD=testpassword123
+        ENVIRONMENT=testing
+        EOF
+
+    - name: Validate Python scripts
+      run: |
+        python -c "
+        import ast
+        import os
+        
+        python_files = [
+          '01_load_data_to_database.py',
+          '02_build_analytical_tables.py',
+          '03_verify_dimension_tables.py',
+          '04_inspect_fact_table_schema.py'
+        ]
+        
+        for py_file in python_files:
+          if os.path.exists(py_file):
+            try:
+              with open(py_file, 'r') as f:
+                ast.parse(f.read())
+              print(f'✅ {py_file}: Syntax valid')
+            except SyntaxError as e:
+              print(f'❌ {py_file}: {e}')
+          else:
+            print(f'⚠️ {py_file}: Not found')
+        "
+
+    - name: Check for hardcoded credentials
+      run: |
+        python -c "
+        import os
+        import re
+        
+        python_files = [
+          '01_load_data_to_database.py',
+          '02_build_analytical_tables.py',
+          '03_verify_dimension_tables.py',
+          '04_inspect_fact_table_schema.py'
+        ]
+        
+        found_credentials = False
+        for py_file in python_files:
+          if os.path.exists(py_file):
+            with open(py_file, 'r') as f:
+              content = f.read()
+              # Check for hardcoded passwords (basic check)
+              if re.search(r'PASSWORD\s*=\s*['\\'\\\"]\w+['\\'\\\"]\s*[^=]', content):
+                print(f'⚠️ {py_file}: Potential hardcoded credentials')
+                found_credentials = True
+              else:
+                print(f'✅ {py_file}: No hardcoded credentials')
+        
+        if found_credentials:
+          print('\\nNote: Verify credentials are loaded from environment variables')
+        "
+

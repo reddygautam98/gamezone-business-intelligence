@@ -1,0 +1,167 @@
+name: Code Quality & Security Checks
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  code-quality:
+    runs-on: ubuntu-latest
+    name: Code Quality Checks
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pylint flake8 black isort bandit
+
+    - name: Run Black (Code Formatter Check)
+      run: |
+        black --check --line-length 100 .
+      continue-on-error: true
+
+    - name: Run isort (Import Sorting Check)
+      run: |
+        isort --check-only --profile black .
+      continue-on-error: true
+
+    - name: Run Pylint
+      run: |
+        pylint $(find . -name "*.py" -type f | grep -v venv | grep -v ".venv") --exit-zero
+      continue-on-error: true
+
+    - name: Run Flake8
+      run: |
+        flake8 $(find . -name "*.py" -type f | grep -v venv | grep -v ".venv") --count --select=E9,F63,F7,F82 --show-source --statistics
+      continue-on-error: true
+
+    - name: Security Check - Bandit
+      run: |
+        bandit -r . -ll --exclude ./venv,./.venv
+      continue-on-error: true
+
+  security:
+    runs-on: ubuntu-latest
+    name: Security Vulnerability Scan
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety
+
+    - name: Check for known security vulnerabilities
+      run: |
+        safety check --json
+      continue-on-error: true
+
+    - name: Check for hardcoded secrets
+      run: |
+        pip install detect-secrets
+        detect-secrets scan --all-files --baseline .secrets.baseline
+      continue-on-error: true
+
+  lint-sql:
+    runs-on: ubuntu-latest
+    name: SQL Linting
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Install sqlfluff
+      run: |
+        python -m pip install --upgrade pip
+        pip install sqlfluff
+
+    - name: Lint SQL files
+      run: |
+        sqlfluff lint . --dialect postgres --exclude-rules parsing
+      continue-on-error: true
+
+  documentation:
+    runs-on: ubuntu-latest
+    name: Documentation Check
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Check README exists
+      run: |
+        if [ ! -f README.md ]; then
+          echo "ERROR: README.md not found"
+          exit 1
+        fi
+        echo "✅ README.md found"
+
+    - name: Check .env.example exists
+      run: |
+        if [ ! -f .env.example ]; then
+          echo "ERROR: .env.example not found"
+          exit 1
+        fi
+        echo "✅ .env.example found"
+
+    - name: Verify .env in .gitignore
+      run: |
+        if grep -q "^\.env$" .gitignore; then
+          echo "✅ .env properly excluded from git"
+        else
+          echo "WARNING: .env not found in .gitignore"
+          exit 1
+        fi
+
+    - name: Check for hardcoded credentials in code
+      run: |
+        if grep -r "PASSWORD\s*=\s*['\"]" . --include="*.py" --exclude-dir=venv --exclude-dir=.venv; then
+          echo "ERROR: Hardcoded credentials found in Python files"
+          exit 1
+        else
+          echo "✅ No hardcoded credentials detected"
+        fi
+
+  commit-message:
+    runs-on: ubuntu-latest
+    name: Commit Message Check
+    if: github.event_name == 'pull_request'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Validate commit messages
+      run: |
+        # Get commit messages from PR
+        git log --format=%B -n 1
+        
+        # Check for conventional commit format
+        COMMIT_MSG=$(git log --format=%B -n 1)
+        if echo "$COMMIT_MSG" | grep -qE "^(feat|fix|docs|style|refactor|test|chore|perf|ci)(\(.+\))?:"; then
+          echo "✅ Commit message follows conventional format"
+        else
+          echo "WARNING: Commit message should follow conventional format"
+          echo "Format: <type>(<scope>): <subject>"
+          echo "Example: feat(auth): add password reset functionality"
+        fi
+

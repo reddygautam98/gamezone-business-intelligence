@@ -1,0 +1,156 @@
+name: Pull Request Checks
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  pr-validation:
+    runs-on: ubuntu-latest
+    name: PR Validation
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Check PR title format
+      run: |
+        PR_TITLE="${{ github.event.pull_request.title }}"
+        
+        if echo "$PR_TITLE" | grep -qE "^(feat|fix|docs|style|refactor|test|chore|perf)(\(.+\))?:"; then
+          echo "✅ PR title follows conventional format: $PR_TITLE"
+        else
+          echo "⚠️ PR title should follow conventional format"
+          echo "Example: feat(analytics): add new dashboard queries"
+          echo "Current title: $PR_TITLE"
+        fi
+
+    - name: Check PR description
+      run: |
+        PR_BODY="${{ github.event.pull_request.body }}"
+        
+        if [ -z "$PR_BODY" ]; then
+          echo "⚠️ WARNING: PR description is empty"
+          echo "Please provide a detailed description"
+        else
+          echo "✅ PR has description"
+        fi
+
+    - name: Check for breaking changes
+      run: |
+        PR_LABELS="${{ join(github.event.pull_request.labels.*.name) }}"
+        
+        if echo "$PR_LABELS" | grep -q "breaking"; then
+          echo "⚠️ This PR is marked as breaking change"
+          echo "Ensure migration guide is provided"
+        else
+          echo "✅ No breaking changes indicated"
+        fi
+
+  changed-files:
+    runs-on: ubuntu-latest
+    name: Validate Changed Files
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Get changed files
+      id: changed-files
+      uses: tj-actions/changed-files@v35
+
+    - name: Check for .env changes
+      run: |
+        if echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -q "\.env$"; then
+          echo "❌ ERROR: .env file should not be committed"
+          exit 1
+        else
+          echo "✅ No .env file changes"
+        fi
+
+    - name: Check for SQL file changes
+      run: |
+        SQL_FILES=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -E "\.sql$" || true)
+        if [ ! -z "$SQL_FILES" ]; then
+          echo "📝 SQL files changed:"
+          echo "$SQL_FILES"
+          echo "Ensure SQL follows best practices:"
+          echo "  - Use NULL-safe operations"
+          echo "  - Include comments"
+          echo "  - Test on development database"
+        fi
+
+    - name: Check for Python file changes
+      run: |
+        PY_FILES=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -E "\.py$" || true)
+        if [ ! -z "$PY_FILES" ]; then
+          echo "🐍 Python files changed:"
+          echo "$PY_FILES"
+          echo "Ensure changes:"
+          echo "  - Use environment variables for credentials"
+          echo "  - Include error handling"
+          echo "  - Add helpful error messages"
+        fi
+
+    - name: Check for documentation changes
+      run: |
+        DOC_FILES=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -E "\.(md|txt)$" || true)
+        if [ ! -z "$DOC_FILES" ]; then
+          echo "📚 Documentation files changed:"
+          echo "$DOC_FILES"
+          echo "Thank you for improving documentation!"
+        fi
+
+  size-check:
+    runs-on: ubuntu-latest
+    name: PR Size Check
+
+    steps:
+    - name: Check PR size
+      run: |
+        # Get PR statistics
+        ADDITIONS="${{ github.event.pull_request.additions }}"
+        DELETIONS="${{ github.event.pull_request.deletions }}"
+        TOTAL_CHANGES=$((ADDITIONS + DELETIONS))
+        
+        echo "PR Statistics:"
+        echo "  Additions: $ADDITIONS"
+        echo "  Deletions: $DELETIONS"
+        echo "  Total Changes: $TOTAL_CHANGES"
+        
+        if [ "$TOTAL_CHANGES" -gt 500 ]; then
+          echo "⚠️ Large PR detected (>500 lines changed)"
+          echo "Consider breaking into smaller PRs for easier review"
+        else
+          echo "✅ PR size is reasonable"
+        fi
+
+  merge-conflict-check:
+    runs-on: ubuntu-latest
+    name: Merge Conflict Check
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Check for merge conflicts
+      run: |
+        echo "Checking for merge conflict markers..."
+        
+        if grep -r "<<<<<<\|>>>>>>|\|\|\|\|\|\|" . \
+          --exclude-dir=.git \
+          --exclude-dir=venv \
+          --exclude-dir=.venv; then
+          echo "❌ Merge conflict markers found"
+          exit 1
+        else
+          echo "✅ No merge conflicts"
+        fi
+
