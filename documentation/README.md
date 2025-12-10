@@ -302,19 +302,31 @@ Password:   [your password]
 
 ### Main Documentation Files
 
-| File | Purpose |
-|------|---------|
-| **00_PROJECT_OVERVIEW.md** | Comprehensive guide (complete reference) |
-| **01_QUICK_REFERENCE_GUIDE.md** | Quick lookup & navigation |
-| **README.md** | This file (getting started) |
+| File | Purpose | Audience |
+|------|---------|----------|
+| **README.md** | Getting started guide | Everyone |
+| **01-PROJECT_OVERVIEW.md** | Comprehensive system architecture | Technical |
+| **02-QUICK_START_GUIDE.md** | Step-by-step setup instructions | New users |
+| **03-EXECUTIVE_REVIEW.md** | Business summary | Executives |
+| **04-GITHUB_ACTIONS_GUIDE.md** | CI/CD workflow documentation | DevOps |
+| **05-SECURITY_REPORT.md** | Security practices and measures | Security team |
+| **06-BUSINESS_PROBLEMS_SOLVED.md** | Value proposition & ROI | Business |
+| **07-POWER_BI_DASHBOARD_GUIDE.md** | BI dashboard implementation (2000+ lines) | BI Developers |
+| **08-POWER_BI_VISUAL_CONFIGURATION.md** | Visual design specifications | BI Designers |
+| **DATABASE_UPDATE_REPORT.md** | Data load specifications | Data Engineers |
+| **FACT_TABLE_UPDATE_VERIFICATION.md** | Data validation results | QA/Data teams |
+| **analytics_queries_foundational.sql** | 50+ foundational SQL queries | Analysts |
+| **analytics_queries_strategic.sql** | Advanced strategic queries | Business Analysts |
 
 ### How to Use Documentation
 
 1. **New to the project?** → Start here (README.md)
-2. **Need quick answers?** → Use 01_QUICK_REFERENCE_GUIDE.md
-3. **Want complete details?** → Read 00_PROJECT_OVERVIEW.md
-4. **Running first time?** → Follow Quick Start above
-5. **Stuck?** → Check FAQ section below
+2. **Setting up the system?** → Use 02-QUICK_START_GUIDE.md
+3. **Want complete technical details?** → Read 01-PROJECT_OVERVIEW.md
+4. **Building Power BI dashboard?** → See 07-POWER_BI_DASHBOARD_GUIDE.md
+5. **Need dashboard design specs?** → Check 08-POWER_BI_VISUAL_CONFIGURATION.md
+6. **Running first time?** → Follow Quick Start above
+7. **Stuck?** → Check FAQ section below
 
 ---
 
